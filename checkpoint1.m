@@ -110,7 +110,7 @@ window = fs .* winLen;
 nfft = 1024;
 
 % Set data to extract from
-x = train_ECoG_1;
+x = test_ECoG_3;
 channel = min(size(x));
 
 % % extract mean voltage
@@ -154,16 +154,7 @@ for i = 1:channel
     f160_175_1(:,i) = mean(mag(f>160 & f<175,:));
 end
 
-train_feats_1 = [volt_feat_1; f5_15_1'; f20_25_1'; f75_115_1'; f125_160_1'; f160_175_1'];
-
-test_feats_1 = [volt_feat_1./max(max(abs(volt_feat_1))); f5_15_1./max(max(abs(f5_15_1)));...
-    f75_115_1./max(max(abs(f75_115_1)));...
-    f125_160_1./max(max(abs(f125_160_1))); f160_175_1./max(max(abs(f160_175_1)))];
-
-train_feats_1 = padarray(train_feats_1, [0 1], 'pre');
-
-
-
+test_feats_3 = [volt_feat_1; f5_15_1'; f20_25_1'; f75_115_1'; f125_160_1'; f160_175_1'];
 
 
 % decimate glove
@@ -177,22 +168,17 @@ sub1dec = sub1decnet(train_feats_1);
 
 % interpolating spline
 duration_ECoG = 147499000;
-sub1dg = spline(linspace(0,duration_ECoG,length(y_hat')),y_hat',linspace(0,duration_ECoG,length(test_ECoG_1)));
+sub3dg = spline(linspace(0,duration_ECoG,length(y_hat')),y_hat',linspace(0,duration_ECoG,length(test_ECoG_3)));
 
 
 X = train_feats_1';
-beta = (X'*X)\(X'*dec_glove_1');
 
 
 % Linear model
-
-X = ones(6197,372*3+1);
-
-% v = num classes, M = num time bins, n = time bins before
-
-y = train_feats_1;
+y = test_feats_3;
 num_lag = 3;
-
+X = ones(max(size(y))+1-num_lag,min(size(y))*3+1);
+% v = num classes, M = num time bins, n = time bins before
 for v = 1:min(size(y))
     for M = 1:(max(size(y))+1-num_lag)
         for n = 1:num_lag
@@ -200,8 +186,8 @@ for v = 1:min(size(y))
         end
     end
 end
-
-
+X = padarray(X, [3 0], 'pre');
+beta = (X'*X)\(X'*dec_glove_3');
 
 
 %% Subject 2 Classifying
