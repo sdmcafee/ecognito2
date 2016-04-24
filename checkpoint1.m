@@ -93,41 +93,41 @@ if ~exist('session')
 end
 
 
-% Defining anon feat funcs
-avgVolt = @(x) mean(x);
-NumWins = @(x, fs, winLen, winDisp) floor((length(x) - winLen*fs)/(winDisp*fs))+1;
+
+%% decimate glove
+dec_glove_3 = zeros(5,length(train_glove_3)/50);
+for i = 1:5
+    dec_glove_3(i,:) = decimate(train_glove_3(i,:)',50);
+end
 
 
-%% Subject 1 Classifying
+
+%% Feature Classification
 % Feature Extracting
+% Set data to extract from
+x = test_ECoG_3;
+channel = min(size(x));
 
 fs = 1000;
 winLen = .1;
 winDisp = .05;
 
-noverlap = fs .* winDisp;
-window = fs .* winLen;
-nfft = 1024;
+% Defining anon feat funcs
+avgVolt = @(x) mean(x);
+NumWins = @(x, fs, winLen, winDisp) floor((length(x) - winLen*fs)/(winDisp*fs))+1;
 
-% Set data to extract from
-x = test_ECoG_3;
-channel = min(size(x));
 
 % % extract mean voltage
 % mask = ones(1,window)/window;
 % mean_volt = conv(x(1,:),mask,'valid');
 
-
-volt_feat_1 = zeros(channel,NumWins(x,fs,winLen,winDisp));
-
+volt_feat = zeros(channel,NumWins(x,fs,winLen,winDisp));
 for i = 1:channel
-    volt_feat_1(i,:) = MovingWinFeats(x(i,:),fs,winLen,winDisp,avgVolt);
+    volt_feat(i,:) = MovingWinFeats(x(i,:),fs,winLen,winDisp,avgVolt);
 end
 
 
-%% TO-DO: extract frequency bands
-
-% SPECTROGRAM METHOD
+% Extract Features: SPECTROGRAM METHOD
 winLen = .1;
 winDisp = .05;
 noverlap = fs .* winDisp;
@@ -154,113 +154,31 @@ for i = 1:channel
     f160_175_1(:,i) = mean(mag(f>160 & f<175,:));
 end
 
-test_feats_3 = [volt_feat_1; f5_15_1'; f20_25_1'; f75_115_1'; f125_160_1'; f160_175_1'];
-
-
-% decimate glove
-dec_glove_3 = zeros(5,length(train_glove_3)/50);
-for i = 1:5
-    dec_glove_3(i,:) = decimate(train_glove_3(i,:)',50);
-end
-
-sub1dec = sub1decnet(train_feats_1);
-
-
-% interpolating spline
-duration_ECoG = 147499000;
-sub3dg = spline(linspace(0,duration_ECoG,length(y_hat')),y_hat',linspace(0,duration_ECoG,length(test_ECoG_3)));
-
-
-X = train_feats_1';
-
-
 % Linear model
-y = test_feats_3;
-num_lag = 3;
-X = ones(max(size(y))+1-num_lag,min(size(y))*3+1);
+y = [volt_feat; f5_15_1'; f20_25_1'; f75_115_1'; f125_160_1'; f160_175_1'];
+num_lag = 5;
+X = ones(max(size(y))+1-num_lag,min(size(y))*num_lag+1);
 % v = num classes, M = num time bins, n = time bins before
 for v = 1:min(size(y))
     for M = 1:(max(size(y))+1-num_lag)
         for n = 1:num_lag
-            X(M,((v-1)*3+1)+n) = y(v,M+n-1);
+            X(M,((v-1)*num_lag+1)+n) = y(v,M+n-1);
         end
     end
 end
-X = padarray(X, [3 0], 'pre');
+X = padarray(X, [num_lag 0], 'pre');
+
+%% Making beta matrix
 beta = (X'*X)\(X'*dec_glove_3');
 
+%% Scaling back up for submission
+% interpolating spline
+y_hat = X*beta;
+duration_ECoG = 147499000;
+sub3dg = spline(linspace(0,duration_ECoG,length(y_hat')),y_hat',linspace(0,duration_ECoG,length(x)));
 
-%% Subject 2 Classifying
-% prep for nnets
-tr_glove_2 = zeros(6,length(train_glove_2));
-for i = 1:length(tr_glove_2)
-    finger = train_glove_2(i);
-    if (finger < 0) || (finger > 5)
-        continue
-    end
-    tr_glove_2(finger+1,i) = 1;
-end
-
-%% Subject 3 Classifying
-% prep for nnets
-tr_glove_3 = zeros(6,length(train_glove_3));
-for i = 1:length(tr_glove_2)
-    finger = train_glove_3(i);
-    if (finger < 0) || (finger > 5)
-        continue
-    end
-    tr_glove_3(finger+1,i) = 1;
-end
+%% package
+predicted_dg = {sub1dg';sub2dg';sub3dg'};
 
 
 
-
-
-
-
-
-
-
-
-
-%% Placeholder for garbage
-
-% 5 to 15 Hz
-f5_15_1 = zeros(62,NumWins(x,fs,winLen,winDisp));
-for i = 1:62
-    f5_15_1(i,:) = MovingWinFeats(x(i,:),fs,winLen,winDisp,@(x) meanPower(x,fs,5,15));
-end
-
-% % 20 to 25 Hz
-% f20_25_1 = zeros(62,NumWins(x,fs,winLen,winDisp));
-% for i = 1:62
-%     f20_25_1(i,:) = MovingWinFeats(x(i,:),fs,winLen,winDisp,@(x) meanPower(x,fs,20,25));
-% end
-
-% 75 to 115 Hz
-f75_115_1 = zeros(62,NumWins(x,fs,winLen,winDisp));
-for i = 1:62
-    f75_115_1(i,:) = MovingWinFeats(x(i,:),fs,winLen,winDisp,@(x) meanPower(x,fs,75,115));
-end
-
-% 125 to 160 Hz
-f125_160_1 = zeros(62,NumWins(x,fs,winLen,winDisp));
-for i = 1:62
-    f125_160_1(i,:) = MovingWinFeats(x(i,:),fs,winLen,winDisp,@(x) meanPower(x,fs,125,160));
-end
-
-% 160 to 175 Hz
-f160_175_1 = zeros(62,NumWins(x,fs,winLen,winDisp));
-for i = 1:62
-    f160_175_1(i,:) = MovingWinFeats(x(i,:),fs,winLen,winDisp,@(x) meanPower(x,fs,160,175));
-end
-
-
-% Matrix to make finger prediction
-finger_guess = zeros(1,length(guess));
-for i=1:length(guess)
-    if guess(1,i) < 0.9
-        [~,finger] = max(guess(2:end,i));
-        finger_guess(i) = finger;
-    end
-end
