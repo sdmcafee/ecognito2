@@ -12,8 +12,8 @@ winEnd = winLen .* fs;
 for i = 1:NumWins
     xWin = x(winStart:winEnd);
     y(i) = featFn(xWin);
-    winStart = winStart + winDisp;
-    winEnd = winEnd + winDisp;
+    winStart = winStart + winDisp .* fs;
+    winEnd = winEnd + winDisp .* fs;
 end
 
 end
