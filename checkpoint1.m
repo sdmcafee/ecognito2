@@ -95,11 +95,20 @@ end
 
 
 %% decimate glove
+dec_glove_1 = zeros(5,length(train_glove_1)/50);
+for i = 1:5
+    dec_glove_1(i,:) = decimate(train_glove_1(i,:)',50);
+end
+
+dec_glove_2 = zeros(5,length(train_glove_2)/50);
+for i = 1:5
+    dec_glove_2(i,:) = decimate(train_glove_2(i,:)',50);
+end
+
 dec_glove_3 = zeros(5,length(train_glove_3)/50);
 for i = 1:5
     dec_glove_3(i,:) = decimate(train_glove_3(i,:)',50);
 end
-
 
 
 %% Feature Classification
@@ -114,8 +123,10 @@ winDisp = .05;
 
 % Defining anon feat funcs
 avgVolt = @(x) mean(x);
+E = @(x) sum(x.^2);
+A = @(x) sum(abs(x));
 NumWins = @(x, fs, winLen, winDisp) floor((length(x) - winLen*fs)/(winDisp*fs))+1;
-
+norm = @(x) bsxfun(@rdivide, x-diag(mean(x,2))*ones(size(x)),std(x,0,2));
 
 % % extract mean voltage
 % mask = ones(1,window)/window;
@@ -154,9 +165,12 @@ for i = 1:channel
     f160_175_1(:,i) = mean(mag(f>160 & f<175,:));
 end
 
+
+
 % Linear model
 y = [volt_feat; f5_15_1'; f20_25_1'; f75_115_1'; f125_160_1'; f160_175_1'];
-num_lag = 5;
+y = norm(y);
+num_lag = 3;
 X = ones(max(size(y))+1-num_lag,min(size(y))*num_lag+1);
 % v = num classes, M = num time bins, n = time bins before
 for v = 1:min(size(y))
@@ -167,6 +181,8 @@ for v = 1:min(size(y))
     end
 end
 X = padarray(X, [num_lag 0], 'pre');
+y = padarray(y, [0 1], 'pre');
+
 
 %% Making beta matrix
 beta = (X'*X)\(X'*dec_glove_3');
@@ -180,5 +196,91 @@ sub3dg = spline(linspace(0,duration_ECoG,length(y_hat')),y_hat',linspace(0,durat
 %% package
 predicted_dg = {sub1dg';sub2dg';sub3dg'};
 
+%% ensemble subject 1
+mdl1_1 = fitensemble(y',dec_glove_1(1,:)','LSBoost',100,'Tree');
+mdl1_2 = fitensemble(y',dec_glove_1(2,:)','LSBoost',100,'Tree');
+mdl1_3 = fitensemble(y',dec_glove_1(3,:)','LSBoost',100,'Tree');
+mdl1_4 = fitensemble(y',dec_glove_1(4,:)','LSBoost',100,'Tree');
+mdl1_5 = fitensemble(y',dec_glove_1(5,:)','LSBoost',100,'Tree');
+
+
+dg1_1 = predict(mdl1_1,y');
+dg1_2 = predict(mdl1_2,y');
+dg1_3 = predict(mdl1_3,y');
+dg1_4 = predict(mdl1_4,y');
+dg1_5 = predict(mdl1_5,y');
+dg1 = [dg1_1, dg1_2, dg1_3, dg1_4, dg1_5];
+
+%% ensemble subject 2
+mdl2_1 = fitensemble(y',dec_glove_2(1,:)','LSBoost',100,'Tree');
+mdl2_2 = fitensemble(y',dec_glove_2(2,:)','LSBoost',100,'Tree');
+mdl2_3 = fitensemble(y',dec_glove_2(3,:)','LSBoost',100,'Tree');
+mdl2_4 = fitensemble(y',dec_glove_2(4,:)','LSBoost',100,'Tree');
+mdl2_5 = fitensemble(y',dec_glove_2(5,:)','LSBoost',100,'Tree');
+
+
+dg2_1 = predict(mdl2_1,y');
+dg2_2 = predict(mdl2_2,y');
+dg2_3 = predict(mdl2_3,y');
+dg2_4 = predict(mdl2_4,y');
+dg2_5 = predict(mdl2_5,y');
+dg2 = [dg2_1, dg2_2, dg2_3, dg2_4, dg2_5];
+
+%% ensemble subject 3
+mdl3_1 = fitensemble(y',dec_glove_3(1,:)','LSBoost',100,'Tree');
+mdl3_2 = fitensemble(y',dec_glove_3(2,:)','LSBoost',100,'Tree');
+mdl3_3 = fitensemble(y',dec_glove_3(3,:)','LSBoost',100,'Tree');
+mdl3_4 = fitensemble(y',dec_glove_3(4,:)','LSBoost',100,'Tree');
+mdl3_5 = fitensemble(y',dec_glove_3(5,:)','LSBoost',100,'Tree');
+
+
+dg3_1 = predict(mdl3_1,y');
+dg3_2 = predict(mdl3_2,y');
+dg3_3 = predict(mdl3_3,y');
+dg3_4 = predict(mdl3_4,y');
+dg3_5 = predict(mdl3_5,y');
+dg3 = [dg3_1, dg3_2, dg3_3, dg3_4, dg3_5];
+
+%%
+mdl1_1 = lasso(X,dec_glove_1(1,:)');
+mdl1_2 = lasso(X,dec_glove_1(2,:)');
+mdl1_3 = lasso(X,dec_glove_1(3,:)');
+mdl1_4 = lasso(X,dec_glove_1(4,:)');
+mdl1_5 = lasso(X,dec_glove_1(5,:)');
+
+mdl2_1 = lasso(X,dec_glove_2(1,:)');
+mdl2_2 = lasso(X,dec_glove_2(2,:)');
+mdl2_3 = lasso(X,dec_glove_2(3,:)');
+mdl2_4 = lasso(X,dec_glove_2(4,:)');
+mdl2_5 = lasso(X,dec_glove_2(5,:)');
+
+mdl3_1 = lasso(X,dec_glove_3(1,:)');
+mdl3_2 = lasso(X,dec_glove_3(2,:)');
+mdl3_3 = lasso(X,dec_glove_3(3,:)');
+mdl3_4 = lasso(X,dec_glove_3(4,:)');
+mdl3_5 = lasso(X,dec_glove_3(5,:)');
+
+
+
+dg1_1 = X*mdl1_1(:,1);
+dg1_2 = X*mdl1_2(:,1);
+dg1_3 = X*mdl1_3(:,1);
+dg1_4 = X*mdl1_4(:,1);
+dg1_5 = X*mdl1_5(:,1);
+dg1 = [dg1_1, dg1_2, dg1_3, dg1_4, dg1_5];
+
+dg2_1 = X*mdl2_1(:,1);
+dg2_2 = X*mdl2_2(:,1);
+dg2_3 = X*mdl2_3(:,1);
+dg2_4 = X*mdl2_4(:,1);
+dg2_5 = X*mdl2_5(:,1);
+dg2 = [dg2_1, dg2_2, dg2_3, dg2_4, dg2_5];
+
+dg3_1 = X*mdl3_1(:,1);
+dg3_2 = X*mdl3_2(:,1);
+dg3_3 = X*mdl3_3(:,1);
+dg3_4 = X*mdl3_4(:,1);
+dg3_5 = X*mdl3_5(:,1);
+dg3 = [dg3_1, dg3_2, dg3_3, dg3_4, dg3_5];
 
 
