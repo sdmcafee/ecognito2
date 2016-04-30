@@ -110,11 +110,14 @@ for i = 1:5
     dec_glove_3(i,:) = decimate(train_glove_3(i,:)',50);
 end
 
+%%
+[idxTrain, idxTest] = crossvalind('HoldOut', 6200, .3);
+
 
 %% Feature Classification
 % Feature Extracting
 % Set data to extract from
-x = test_ECoG_3;
+x = train_ECoG_2;
 channel = min(size(x));
 
 fs = 1000;
@@ -137,10 +140,14 @@ for i = 1:channel
     volt_feat(i,:) = MovingWinFeats(x(i,:),fs,winLen,winDisp,avgVolt);
 end
 
+output = tsmovavg(x,'s',winLen*fs,2);
+
+% var_feat = zeros(channel,NumWins(x,fs,winLen,winDisp));
+% for i = 1:channel
+%     var_feat(i,:) = MovingWinFeats(x(i,:),fs,winLen,winDisp,@(x) var(x));
+% end
 
 % Extract Features: SPECTROGRAM METHOD
-winLen = .1;
-winDisp = .05;
 noverlap = fs .* winDisp;
 window = fs .* winLen;
 nfft = 1024;
@@ -170,7 +177,7 @@ end
 % Linear model
 y = [volt_feat; f5_15_1'; f20_25_1'; f75_115_1'; f125_160_1'; f160_175_1'];
 y = norm(y);
-num_lag = 3;
+num_lag = 4;
 X = ones(max(size(y))+1-num_lag,min(size(y))*num_lag+1);
 % v = num classes, M = num time bins, n = time bins before
 for v = 1:min(size(y))
@@ -181,35 +188,56 @@ for v = 1:min(size(y))
     end
 end
 X = padarray(X, [num_lag 0], 'pre');
-y = padarray(y, [0 1], 'pre');
-
+Xtrain= X(idxTrain,:);
+Xtest = X(idxTest,:);
 
 %% Making beta matrix
-beta = (X'*X)\(X'*dec_glove_3');
+Xtrain = Xtrain(:,feats_picked);
+
+beta = (Xtrain'*Xtrain)\(Xtrain'*dec_glove_2(:,idxTrain)');
 
 %% Scaling back up for submission
 % interpolating spline
-y_hat = X*beta;
+Xtest = Xtest(:,feats_picked);
+
+y_hat = Xtest*beta;
 duration_ECoG = 147499000;
 sub3dg = spline(linspace(0,duration_ECoG,length(y_hat')),y_hat',linspace(0,duration_ECoG,length(x)));
 
 %% package
 predicted_dg = {sub1dg';sub2dg';sub3dg'};
 
+%% feature selection
+
+%fun = @(xtrain, ytrain, xtest, ytest) sum(ytest ~= classify(xtest, xtrain, ytrain));
+% fun = @(XT,yT,Xt,yt) (rmse((regress(yT, XT)'*Xt')'), yt);
+% inmodel = sequentialfs(fun,X,dec_glove_1(1,:)');
+
+im = zeros(5,min(size(X)));
+
+[~,~,~,im(1,:),~,~,~] = stepwisefit(Xtrain,dec_glove_2(1,idxTrain)');
+[~,~,~,im(2,:),~,~,~] = stepwisefit(Xtrain,dec_glove_2(2,idxTrain)');
+[~,~,~,im(3,:),~,~,~] = stepwisefit(Xtrain,dec_glove_2(3,idxTrain)');
+[~,~,~,im(4,:),~,~,~] = stepwisefit(Xtrain,dec_glove_2(4,idxTrain)');
+[~,~,~,im(5,:),~,~,~] = stepwisefit(Xtrain,dec_glove_2(5,idxTrain)');
+
+feats_picked = sum(im) > 1;
+
+
 %% ensemble subject 1
-mdl1_1 = fitensemble(y',dec_glove_1(1,:)','LSBoost',100,'Tree');
-mdl1_2 = fitensemble(y',dec_glove_1(2,:)','LSBoost',100,'Tree');
-mdl1_3 = fitensemble(y',dec_glove_1(3,:)','LSBoost',100,'Tree');
-mdl1_4 = fitensemble(y',dec_glove_1(4,:)','LSBoost',100,'Tree');
-mdl1_5 = fitensemble(y',dec_glove_1(5,:)','LSBoost',100,'Tree');
+mdl1_1 = fitglm(X,(dec_glove_1(1,:)'-min(dec_glove_1(1,:))+.01),'Distribution','gamma');
+mdl1_2 = fitglm(X,dec_glove_1(2,:)');
+mdl1_3 = fitglm(X,dec_glove_1(3,:)');
+mdl1_4 = fitglm(X,dec_glove_1(4,:)');
+mdl1_5 = fitglm(X,dec_glove_1(5,:)');
 
 
-dg1_1 = predict(mdl1_1,y');
-dg1_2 = predict(mdl1_2,y');
-dg1_3 = predict(mdl1_3,y');
-dg1_4 = predict(mdl1_4,y');
-dg1_5 = predict(mdl1_5,y');
-dg1 = [dg1_1, dg1_2, dg1_3, dg1_4, dg1_5];
+dg1_1 = predict(mdl1_1,X);
+dg1_2 = predict(mdl1_2,X);
+dg1_3 = predict(mdl1_3,X);
+dg1_4 = predict(mdl1_4,X);
+dg1_5 = predict(mdl1_5,X);
+y_hat = [dg1_1, dg1_2, dg1_3, dg1_4, dg1_5];
 
 %% ensemble subject 2
 mdl2_1 = fitensemble(y',dec_glove_2(1,:)','LSBoost',100,'Tree');
@@ -239,7 +267,7 @@ dg3_2 = predict(mdl3_2,y');
 dg3_3 = predict(mdl3_3,y');
 dg3_4 = predict(mdl3_4,y');
 dg3_5 = predict(mdl3_5,y');
-dg3 = [dg3_1, dg3_2, dg3_3, dg3_4, dg3_5];
+y_hat = [dg3_1, dg3_2, dg3_3, dg3_4, dg3_5];
 
 %%
 mdl1_1 = lasso(X,dec_glove_1(1,:)');
